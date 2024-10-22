@@ -1,21 +1,23 @@
 #include "DFRobot_TMF8x01.h"
 #include <Wire.h>
 
-#define TCA9548A_ADDR_0 0x70  // First TCA9548A I2C address
-#define TCA9548A_ADDR_1 0x71  // Second TCA9548A I2C address
-#define EN       -1           // EN pin of TMF8801 is not used
-#define INT      -1           // INT pin of TMF8801 is not used
+#define TCA9548A_ADDR 0x70  // Address of the single TCA9548A I2C multiplexer
+#define EN       -1         // EN pin of TMF8801 is not used
+#define INT      -1         // INT pin of TMF8801 is not used
 
-// Create sensor instances
-DFRobot_TMF8801 tof0(EN, INT);  // Sensor on multiplexer at 0x70, channel 0
-DFRobot_TMF8801 tof1(EN, INT);  // Sensor on multiplexer at 0x70, channel 1
-DFRobot_TMF8801 tof2(EN, INT);  // Sensor on multiplexer at 0x71, channel 2
-DFRobot_TMF8801 tof7(EN, INT);  // Sensor on multiplexer at 0x71, channel 7
+// Create sensor instances for channels 0 to 7 on the same multiplexer
+DFRobot_TMF8801 tof0(EN, INT);
+DFRobot_TMF8801 tof1(EN, INT);
+DFRobot_TMF8801 tof2(EN, INT);
+DFRobot_TMF8801 tof3(EN, INT);
+DFRobot_TMF8801 tof4(EN, INT);
+DFRobot_TMF8801 tof5(EN, INT);
+DFRobot_TMF8801 tof6(EN, INT);
+DFRobot_TMF8801 tof7(EN, INT);
 
 // Struct to hold sensor information
 struct SensorInfo {
   DFRobot_TMF8801* sensor;
-  uint8_t multiplexerAddress;
   uint8_t channel;
   uint8_t caliDataBuf[14];
   int ledPinOver200mm;
@@ -24,26 +26,30 @@ struct SensorInfo {
   const char* name;
 };
 
-// Sensor configurations
+// Sensor configurations for channels 0 to 7
 SensorInfo sensors[] = {
-  { &tof0, TCA9548A_ADDR_0, 0, {0}, 2, 3, 0.0, "Sensor0" },  // Sensor on 0x70, channel 0
-  { &tof1, TCA9548A_ADDR_0, 1, {0}, 4, 5, 0.0, "Sensor1" },  // Sensor on 0x70, channel 1
-  { &tof2, TCA9548A_ADDR_1, 2, {0}, 6, 7, 0.0, "Sensor2" },  // Sensor on 0x71, channel 2
-  { &tof7, TCA9548A_ADDR_1, 7, {0}, 8, 9, 0.0, "Sensor7" }   // Sensor on 0x71, channel 7
+  { &tof0, 0, {0}, 2, 3, 0.0, "Sensor0" },
+  { &tof1, 1, {0}, 4, 5, 0.0, "Sensor1" },
+  { &tof2, 2, {0}, 6, 7, 0.0, "Sensor2" },
+  { &tof3, 3, {0}, 8, 9, 0.0, "Sensor3" },
+  { &tof4, 4, {0}, 10, 11, 0.0, "Sensor4" },
+  { &tof5, 5, {0}, 12, 13, 0.0, "Sensor5" },
+  { &tof6, 6, {0}, 14, 15, 0.0, "Sensor6" },
+  { &tof7, 7, {0}, 16, 17, 0.0, "Sensor7" }
 };
 
 // Function to select the specific channel on the TCA9548A
-void tcaSelect(uint8_t addr, uint8_t channel) {
+void tcaSelect(uint8_t channel) {
   if (channel > 7) {
     Serial.println("Invalid channel selection!");
     return;
   }
-  Wire.beginTransmission(addr);
+  Wire.beginTransmission(TCA9548A_ADDR);
   Wire.write(1 << channel);
   if (Wire.endTransmission() != 0) {
-    Serial.println("Error selecting channel " + String(channel) + " on multiplexer at address 0x" + String(addr, HEX));
+    Serial.println("Error selecting channel " + String(channel) + " on multiplexer.");
   } else {
-    Serial.println("Channel " + String(channel) + " selected on multiplexer at address 0x" + String(addr, HEX));
+    Serial.println("Channel " + String(channel) + " selected on multiplexer.");
   }
 }
 
@@ -52,20 +58,20 @@ void setup() {
   Wire.begin();  // Initialize I2C communication
 
   // Initialize LED pins for each sensor
-  for (int i = 0; i < sizeof(sensors)/sizeof(SensorInfo); i++) {
+  for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
     pinMode(sensors[i].ledPinOver200mm, OUTPUT);
     pinMode(sensors[i].ledPinUnder200mm, OUTPUT);
   }
 
   // Initialize and calibrate each sensor
-  for (int i = 0; i < sizeof(sensors)/sizeof(SensorInfo); i++) {
+  for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
     SensorInfo* s = &sensors[i];
 
     Serial.print("Initializing ");
     Serial.println(s->name);
 
-    // Select the appropriate multiplexer and channel
-    tcaSelect(s->multiplexerAddress, s->channel);
+    // Select the appropriate channel
+    tcaSelect(s->channel);
     delay(100);
 
     // Initialize sensor
@@ -120,11 +126,11 @@ void setup() {
 }
 
 void loop() {
-  for (int i = 0; i < sizeof(sensors)/sizeof(SensorInfo); i++) {
+  for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
     SensorInfo* s = &sensors[i];
 
-    // Select the appropriate multiplexer and channel
-    tcaSelect(s->multiplexerAddress, s->channel);
+    // Select the appropriate channel
+    tcaSelect(s->channel);
     delay(100);
 
     // Check if the sensor data is ready
@@ -145,7 +151,6 @@ void loop() {
         digitalWrite(s->ledPinUnder200mm, HIGH);
       }
     } else {
-    
       Serial.print("No data available on ");
       Serial.println(s->name);
     }
