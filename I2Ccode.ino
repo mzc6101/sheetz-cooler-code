@@ -1,9 +1,18 @@
 #include "DFRobot_TMF8x01.h"
 #include <Wire.h>
+#include <Adafruit_NeoPixel.h>
 
+// I2C Multiplexer Address
 #define TCA9548A_ADDR 0x70  // Address of the single TCA9548A I2C multiplexer
 #define EN       -1         // EN pin of TMF8801 is not used
 #define INT      -1         // INT pin of TMF8801 is not used
+
+// NeoPixel Configuration
+#define NEOPIXEL_PIN    6    // Pin connected to NeoPixel data
+#define NEOPIXEL_COUNT  3    // Number of NeoPixels (one per sensor)
+
+// Create NeoPixel strip object
+Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 // Create sensor instances for channels 0 to 7 on the same multiplexer
 DFRobot_TMF8801 tof0(EN, INT);
@@ -15,29 +24,32 @@ DFRobot_TMF8801 tof5(EN, INT);
 DFRobot_TMF8801 tof6(EN, INT);
 DFRobot_TMF8801 tof7(EN, INT);
 
-
 // Struct to hold sensor information
 struct SensorInfo {
   DFRobot_TMF8801* sensor;
   uint8_t channel;
   uint8_t caliDataBuf[14];
-  int ledPinOver200mm;
-  int ledPinUnder200mm;
   float distance;
   const char* name;
 };
 
 // Sensor configurations for channels 0 to 7
 SensorInfo sensors[] = {
-  { &tof0, 0, {0}, 2, 3, 0.0, "Sensor0" },
-  { &tof1, 1, {0}, 4, 5, 0.0, "Sensor1" },
-  { &tof2, 2, {0}, 6, 7, 0.0, "Sensor2" },
-  { &tof3, 3, {0}, 8, 9, 0.0, "Sensor3" },
-  { &tof4, 4, {0}, 10, 11, 0.0, "Sensor4" },
-  { &tof5, 5, {0}, 12, 13, 0.0, "Sensor5" },
-  { &tof6, 6, {0}, 14, 15, 0.0, "Sensor6" },
-  { &tof7, 7, {0}, 16, 17, 0.0, "Sensor7" }
+  { &tof0, 0, {0}, 0.0, "Sensor0" },
+  { &tof1, 1, {0}, 0.0, "Sensor1" },
+  { &tof2, 2, {0}, 0.0, "Sensor2" },
+  { &tof3, 3, {0}, 0.0, "Sensor3" },
+  { &tof4, 4, {0}, 0.0, "Sensor4" },
+  { &tof5, 5, {0}, 0.0, "Sensor5" },
+  { &tof6, 6, {0}, 0.0, "Sensor6" },
+  { &tof7, 7, {0}, 0.0, "Sensor7" }
 };
+
+// Mapping of NeoPixels to Sensors
+// NeoPixel0 -> Sensor6
+// NeoPixel1 -> Sensor7
+// NeoPixel2 -> Sensor0 (optional)
+const uint8_t neoPixelMapping[NEOPIXEL_COUNT] = {6, 7, 0};
 
 // Function to select the specific channel on the TCA9548A
 void tcaSelect(uint8_t channel) {
@@ -54,15 +66,27 @@ void tcaSelect(uint8_t channel) {
   }
 }
 
+// Function to set NeoPixel color based on distance (Flipped Logic)
+void setPixelColorByDistance(uint8_t pixel, float distance) {
+  uint32_t color;
+  if (distance < 300.0) {
+    color = strip.Color(0, 255, 0); // Green
+  } else if (distance >= 300.0 && distance <= 499.0) {
+    color = strip.Color(255, 255, 0); // Yellow
+  } else {
+    color = strip.Color(255, 0, 0); // Red
+  }
+  strip.setPixelColor(pixel, color);
+}
+
 void setup() {
   Serial.begin(115200);
   Wire.begin();  // Initialize I2C communication
 
-  // Initialize LED pins for each sensor
-  for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
-    pinMode(sensors[i].ledPinOver200mm, OUTPUT);
-    pinMode(sensors[i].ledPinUnder200mm, OUTPUT);
-  }
+  // Initialize NeoPixel strip
+  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();            // Turn OFF all pixels ASAP
+  strip.setBrightness(50); // Set BRIGHTNESS to about 1/5 (max = 255)
 
   // Initialize and calibrate each sensor
   for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
@@ -124,6 +148,10 @@ void setup() {
       Serial.println("Failed to calibrate " + String(s->name));
     }
   }
+
+  // Initialize all NeoPixels to off
+  strip.clear();
+  strip.show();
 }
 
 void loop() {
@@ -143,18 +171,21 @@ void loop() {
       Serial.print(s->distance);
       Serial.println(" mm");
 
-      // Control LEDs based on distance
-      if (s->distance > 200) {
-        digitalWrite(s->ledPinOver200mm, HIGH);
-        digitalWrite(s->ledPinUnder200mm, LOW);
-      } else {
-        digitalWrite(s->ledPinOver200mm, LOW);
-        digitalWrite(s->ledPinUnder200mm, HIGH);
+      // Update NeoPixel if it's mapped
+      for (uint8_t pix = 0; pix < NEOPIXEL_COUNT; pix++) {
+        if (s->channel == neoPixelMapping[pix]) {
+          setPixelColorByDistance(pix, s->distance);
+          strip.show();
+        }
       }
+
     } else {
       Serial.print("No data available on ");
       Serial.println(s->name);
     }
     delay(200);  // Wait before switching to the next sensor
   }
+
+  // Optional: Add a small delay to avoid flooding the I2C bus
+  delay(1000);
 }
