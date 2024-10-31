@@ -8,11 +8,13 @@
 #define INT      -1         // INT pin of TMF8801 is not used
 
 // NeoPixel Configuration
-#define NEOPIXEL_PIN    6    // Pin connected to NeoPixel data
-#define NEOPIXEL_COUNT  3    // Number of NeoPixels (one per sensor)
+#define NEOPIXEL_PIN    6     // Pin connected to NeoPixel data
+#define NEOPIXEL_TOTAL 8   // Total number of NeoPixels on the strip
+#define NEOPIXEL_DISPLAY_COUNT 8 // Number of NeoPixels to use for sensors
+// Number of pixels to skip
 
 // Create NeoPixel strip object
-Adafruit_NeoPixel strip(NEOPIXEL_COUNT, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip(NEOPIXEL_TOTAL, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
 // Create sensor instances for channels 0 to 7 on the same multiplexer
 DFRobot_TMF8801 tof0(EN, INT);
@@ -45,12 +47,6 @@ SensorInfo sensors[] = {
   { &tof7, 7, {0}, 0.0, "Sensor7" }
 };
 
-// Mapping of NeoPixels to Sensors
-// NeoPixel0 -> Sensor6
-// NeoPixel1 -> Sensor7
-// NeoPixel2 -> Sensor0 (optional)
-const uint8_t neoPixelMapping[NEOPIXEL_COUNT] = {6, 7, 0};
-
 // Function to select the specific channel on the TCA9548A
 void tcaSelect(uint8_t channel) {
   if (channel > 7) {
@@ -68,6 +64,15 @@ void tcaSelect(uint8_t channel) {
 
 // Function to set NeoPixel color based on distance (Flipped Logic)
 void setPixelColorByDistance(uint8_t pixel, float distance) {
+  // Calculate the actual pixel index by adding the offset
+  
+  
+  // Boundary check to prevent accessing out-of-range pixels
+  if (pixel >= NEOPIXEL_TOTAL) {
+    Serial.println("Pixel index out of range!");
+    return;
+  }
+
   uint32_t color;
   if (distance < 300.0) {
     color = strip.Color(0, 255, 0); // Green
@@ -77,6 +82,16 @@ void setPixelColorByDistance(uint8_t pixel, float distance) {
     color = strip.Color(255, 0, 0); // Red
   }
   strip.setPixelColor(pixel, color);
+  
+  // Debugging output
+  Serial.print("Setting pixel ");
+  Serial.print(pixel);
+  Serial.print(" to color ");
+  Serial.print((color >> 16) & 0xFF);
+  Serial.print(", ");
+  Serial.print((color >> 8) & 0xFF);
+  Serial.print(", ");
+  Serial.println(color & 0xFF);
 }
 
 void setup() {
@@ -84,12 +99,12 @@ void setup() {
   Wire.begin();  // Initialize I2C communication
 
   // Initialize NeoPixel strip
-  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
-  strip.show();            // Turn OFF all pixels ASAP
-  strip.setBrightness(50); // Set BRIGHTNESS to about 1/5 (max = 255)
+  strip.begin();               // Initialize NeoPixel strip object (REQUIRED)
+  strip.show();                // Turn OFF all pixels ASAP
+  strip.setBrightness(100);    // Set BRIGHTNESS to about 1/5 (max = 255)
 
   // Initialize and calibrate each sensor
-  for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
+  for (int i = 0; i < 8; i++) {
     SensorInfo* s = &sensors[i];
 
     Serial.print("Initializing ");
@@ -146,13 +161,15 @@ void setup() {
 
     } else {
       Serial.println("Failed to calibrate " + String(s->name));
+      // Set NeoPixel color to blue if calibration fails
+      strip.setPixelColor(i, strip.Color(0, 0, 255));  // Blue color
     }
   }
 
-  // Initialize all NeoPixels to off
-  strip.clear();
+  // Show the initial NeoPixel state after calibration attempt
   strip.show();
 }
+
 
 void loop() {
   for (int i = 0; i < sizeof(sensors) / sizeof(SensorInfo); i++) {
@@ -160,7 +177,7 @@ void loop() {
 
     // Select the appropriate channel
     tcaSelect(s->channel);
-    delay(100);
+    delay(200); // Increased delay to ensure sensor readiness
 
     // Check if the sensor data is ready
     if (s->sensor->isDataReady()) {
@@ -171,13 +188,9 @@ void loop() {
       Serial.print(s->distance);
       Serial.println(" mm");
 
-      // Update NeoPixel if it's mapped
-      for (uint8_t pix = 0; pix < NEOPIXEL_COUNT; pix++) {
-        if (s->channel == neoPixelMapping[pix]) {
-          setPixelColorByDistance(pix, s->distance);
-          strip.show();
-        }
-      }
+      // Update NeoPixel color with offset
+      setPixelColorByDistance(i, s->distance);
+      strip.show(); // Show the updated color immediately
 
     } else {
       Serial.print("No data available on ");
@@ -187,5 +200,5 @@ void loop() {
   }
 
   // Optional: Add a small delay to avoid flooding the I2C bus
-  delay(1000);
+  delay(500);
 }
